@@ -1,0 +1,21 @@
+# Inference / generation configuration.
+default_language: "en"
+default_topic: "animals"
+max_new_tokens: 400
+temperature: 0.7
+top_p: 0.9
+repetition_penalty: 1.1
+max_retries: 2
+timeout_seconds: 30.0
+deterministic: false
+
+model:
+  model_id: "HuggingFaceTB/SmolLM2-360M-Instruct"
+  revision: null
+  tokenizer_id: null
+  license_notes: "UNVERIFIED - verify licence before commercial use"
+  license_verified: false
+  max_context_length: 1024
+  trust_remote_code: false
+  device_preference: "auto"
+  local_cache_dir: null

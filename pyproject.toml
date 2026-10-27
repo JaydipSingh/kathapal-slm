@@ -1,0 +1,60 @@
+[project]
+name = "kathapal-slm"
+version = "0.1.0"
+description = "A small language model for a preschool storytelling toy (ages 3-5)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+# Core dependencies needed for data validation, config, generation parsing, and
+# the offline unit tests. These do NOT require downloading any model.
+dependencies = [
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+# Training / model dependencies. Installed on the Mac where fine-tuning runs.
+# Versions are lower-bounds; pin exact versions via `uv lock` on the target
+# machine so the resolved set is verified for Apple Silicon.
+train = [
+    "torch>=2.2",
+    "transformers>=4.44",
+    "peft>=0.11",
+    "datasets>=2.20",
+    "accelerate>=0.33",
+    "safetensors>=0.4",
+]
+# Developer tooling.
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+kathapal = "kathapal.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kathapal"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E501"]  # line length handled by formatter; prose in docstrings varies
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# Integration tests that require model weights are marked and skipped by default.
+markers = [
+    "integration: requires downloaded model weights / network (run on Mac)",
+]

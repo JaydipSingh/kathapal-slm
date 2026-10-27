@@ -1,0 +1,41 @@
+# Supervised LoRA fine-tuning configuration.
+dataset_path: "data/samples/starter_dataset.jsonl"
+output_dir: "outputs"
+seed: 42
+
+# Reproducible splits (must sum to 1.0). Group-aware to avoid near-duplicate leak.
+split_train: 0.8
+split_val: 0.1
+split_test: 0.1
+
+# Kept small for Apple Silicon; raise on capable hardware.
+sequence_length: 512
+batch_size: 1
+gradient_accumulation: 8
+learning_rate: 0.0002
+epochs: 3
+weight_decay: 0.01
+warmup_ratio: 0.05
+checkpoint_every_steps: 50
+eval_every_steps: 50
+gradient_checkpointing: false
+smoke_test: false
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.05
+  # Common attention projection names; adjust per the chosen model.
+  target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
+
+# Base model (inline so training is self-contained).
+model:
+  model_id: "HuggingFaceTB/SmolLM2-360M-Instruct"
+  revision: null
+  tokenizer_id: null
+  license_notes: "UNVERIFIED - verify licence before commercial use"
+  license_verified: false
+  max_context_length: 1024
+  trust_remote_code: false
+  device_preference: "auto"
+  local_cache_dir: null

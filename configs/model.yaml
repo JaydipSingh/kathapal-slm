@@ -1,0 +1,19 @@
+# Base model configuration.
+#
+# IMPORTANT: model_id is a *candidate* only. You MUST verify the model's actual
+# licence and acceptable-use policy before any commercial use. Set
+# license_verified to true only after you have personally confirmed the terms.
+#
+# Candidate small, MPS-friendly instruct models (verify licence yourself):
+#   - HuggingFaceTB/SmolLM2-360M-Instruct   (~360M)
+#   - Qwen/Qwen2.5-0.5B-Instruct            (~0.5B)
+#   - meta-llama/Llama-3.2-1B-Instruct      (~1B, gated + licence conditions)
+model_id: "HuggingFaceTB/SmolLM2-360M-Instruct"
+revision: null
+tokenizer_id: null          # defaults to model_id's tokenizer
+license_notes: "UNVERIFIED - verify licence and acceptable-use before commercial use"
+license_verified: false
+max_context_length: 1024
+trust_remote_code: false
+device_preference: "auto"   # auto -> mps if available, else cpu
+local_cache_dir: null

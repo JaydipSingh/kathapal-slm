@@ -1,0 +1,30 @@
+# Safety configuration. Rule-based layer; does NOT guarantee safe output.
+# Documented limitation: keyword rules reduce but cannot eliminate risk.
+allowed_topics:
+  - animals
+  - nature
+  - friendship
+  - emotions
+  - curiosity
+  - space
+  - science
+  - kindness
+  - sharing
+  - family
+
+min_age: 3
+max_age: 5
+
+# Categories the rule checker flags. Patterns live in src/kathapal/safety/rules.py
+# so they can be unit-tested; this file toggles which categories are active.
+active_checks:
+  - violence
+  - frightening
+  - sexual
+  - hate
+  - dangerous_instructions
+  - personal_information_request
+  - adult_themes
+
+# If any active check fails, return a curated fallback story instead.
+fallback_on_failure: true
