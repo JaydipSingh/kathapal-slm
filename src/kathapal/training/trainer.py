@@ -59,13 +59,45 @@ def build_examples_text(records) -> list[tuple[str, str]]:
 
 
 def _tokenize_example(tokenizer, prompt_text: str, full_text: str, max_len: int):
-    """Tokenize one example and mask prompt tokens in the labels. RUN ON MAC."""
-    full = tokenizer(full_text, truncation=True, max_length=max_len)
-    prompt = tokenizer(prompt_text, truncation=True, max_length=max_len)
-    input_ids = full["input_ids"]
-    prompt_len = min(len(prompt["input_ids"]), len(input_ids))
-    labels = [-100] * prompt_len + input_ids[prompt_len:]
-    return {"input_ids": input_ids, "attention_mask": full["attention_mask"], "labels": labels}
+    """
+    Tokenize one example and mask prompt tokens in the labels. RUN ON MAC.
+
+    Critical correctness points (these caused a zero/nan loss when wrong):
+      * The prompt length is measured WITHOUT truncation, so the mask boundary is
+        accurate even for long prompts.
+      * We ensure at least some ANSWER tokens remain unmasked. If the prompt plus
+        answer exceeds max_len, we truncate from the LEFT of the prompt (keeping
+        the answer and the end of the prompt) rather than dropping the answer.
+        Otherwise every label would be -100 and the loss would be 0 / nan.
+    """
+    full_ids = tokenizer(full_text)["input_ids"]
+    prompt_ids = tokenizer(prompt_text)["input_ids"]
+    prompt_len = len(prompt_ids)
+    answer_len = len(full_ids) - prompt_len
+
+    if len(full_ids) > max_len:
+        if answer_len >= max_len:
+            # Answer alone is too long: keep the last max_len answer tokens; no
+            # prompt context remains, so everything kept is a label.
+            kept = full_ids[-max_len:]
+            prompt_keep = 0
+        else:
+            # Keep all answer tokens + as much trailing prompt as fits.
+            prompt_keep = max_len - answer_len
+            kept = full_ids[prompt_len - prompt_keep:]
+        input_ids = kept
+        new_prompt_len = prompt_keep
+    else:
+        input_ids = full_ids
+        new_prompt_len = prompt_len
+
+    labels = [-100] * new_prompt_len + input_ids[new_prompt_len:]
+    # Safety net: if (degenerately) nothing is learnable, unmask the last token
+    # so the loss is finite rather than nan.
+    if all(x == -100 for x in labels) and input_ids:
+        labels[-1] = input_ids[-1]
+    attention_mask = [1] * len(input_ids)
+    return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
 
 
 def train(cfg: TrainingConfig) -> dict:
@@ -130,7 +162,10 @@ def train(cfg: TrainingConfig) -> dict:
     total = sum(p.numel() for p in model.parameters())
     log.info("Trainable params: %d / %d (%.3f%%)", trainable, total, 100 * trainable / total)
 
-    seq_len = 128 if cfg.smoke_test else cfg.sequence_length
+    # Smoke test uses a reduced but still adequate length. It must be large
+    # enough to hold the (long) system prompt PLUS answer tokens, or the loss
+    # becomes 0/nan because all labels get masked.
+    seq_len = 320 if cfg.smoke_test else cfg.sequence_length
 
     def make_ds(recs):
         rows = []
@@ -142,23 +177,54 @@ def train(cfg: TrainingConfig) -> dict:
     val_ds = make_ds(splits.val) if splits.val else None
 
     out_dir = Path(cfg.output_dir)
-    args = TrainingArguments(
-        output_dir=str(out_dir / "checkpoints"),
-        per_device_train_batch_size=cfg.batch_size,
-        gradient_accumulation_steps=cfg.gradient_accumulation,
-        learning_rate=cfg.learning_rate,
-        num_train_epochs=1 if cfg.smoke_test else cfg.epochs,
-        max_steps=2 if cfg.smoke_test else -1,
-        weight_decay=cfg.weight_decay,
-        warmup_ratio=cfg.warmup_ratio,
-        logging_steps=1,
-        save_steps=cfg.checkpoint_every_steps,
-        eval_strategy="steps" if val_ds else "no",
-        eval_steps=cfg.eval_every_steps,
-        gradient_checkpointing=cfg.gradient_checkpointing,
-        report_to=[],
-        seed=cfg.seed,
-    )
+
+    # Build TrainingArguments robustly across transformers versions: some
+    # argument names differ between releases (e.g. warmup_ratio, and
+    # eval_strategy vs evaluation_strategy). We assemble the desired kwargs,
+    # then keep only those the installed TrainingArguments actually accepts,
+    # warning about any that are dropped.
+    import inspect
+
+    desired_args: dict = {
+        "output_dir": str(out_dir / "checkpoints"),
+        "per_device_train_batch_size": cfg.batch_size,
+        "gradient_accumulation_steps": cfg.gradient_accumulation,
+        "learning_rate": cfg.learning_rate,
+        "num_train_epochs": 1 if cfg.smoke_test else cfg.epochs,
+        "max_steps": 2 if cfg.smoke_test else -1,
+        "weight_decay": cfg.weight_decay,
+        "warmup_ratio": cfg.warmup_ratio,
+        "logging_steps": 1,
+        "save_steps": cfg.checkpoint_every_steps,
+        "eval_steps": cfg.eval_every_steps,
+        "gradient_checkpointing": cfg.gradient_checkpointing,
+        "report_to": [],
+        "seed": cfg.seed,
+    }
+
+    accepted = set(inspect.signature(TrainingArguments.__init__).parameters)
+
+    # Eval-strategy argument was renamed across versions; pick whichever exists.
+    eval_value = "steps" if val_ds is not None else "no"
+    if "eval_strategy" in accepted:
+        desired_args["eval_strategy"] = eval_value
+    elif "evaluation_strategy" in accepted:
+        desired_args["evaluation_strategy"] = eval_value
+
+    filtered_args = {}
+    dropped = []
+    for key, value in desired_args.items():
+        if key in accepted:
+            filtered_args[key] = value
+        else:
+            dropped.append(key)
+    if dropped:
+        log.warning(
+            "TrainingArguments: your transformers version does not accept %s; "
+            "proceeding without them.", dropped
+        )
+
+    args = TrainingArguments(**filtered_args)
 
     collator = DataCollatorForSeq2Seq(tokenizer, model=model, padding=True, label_pad_token_id=-100)
     trainer = Trainer(
